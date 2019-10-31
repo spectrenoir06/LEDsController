@@ -1,5 +1,5 @@
 local socket = require("socket")
-local class = require("lib.middleclass")
+local class = require("middleclass")
 local brotli
 
 if not (love and love.system.getOS() == "Android") then
