@@ -67,7 +67,6 @@ function LEDsController:initialize(led_nb, protocol, ip, remote_port, local_port
 
 	if protocol == "BRO888" and not brotli then
 		protocol = "RLE888"
-		print("test", protocol)
 	end
 
 	self.protocols = {
@@ -662,6 +661,9 @@ function LEDsController:start_dump(pro, name)
 		return
 	end
 	self.dump_file = io.open("dump/"..(name or "anim").."."..pro, "w")
+	if not self.dump_file then
+		error("Can't write: 'dump/"..(name or "anim").."."..pro.."'")
+	end
 	self.dump_file:write(pack("bHH", protocol, 30, self.led_nb))
 end
 
