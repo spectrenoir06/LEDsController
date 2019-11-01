@@ -6,7 +6,6 @@
 - sudo luarocks install lpack
 - sudo luarocks install lua-brotli
 - sudo luarocks install middleclass
-- sudo luarocks install hump
 
 # Animation format:
 
