@@ -27,7 +27,7 @@ end
 local UDP_PORT           = 6454
 local MAX_UPDATE_SIZE    = 1280 -- max 1280 after the driver explode == 426 RGB LEDs
 local SHOW_DEBUG         = true
-local LEDS_BY_UNI        = 170
+local LEDS_BY_UNI        = 100
 
 
 local ART_POLL           = 0x2000
@@ -86,7 +86,7 @@ function LEDsController:initialize(led_nb, protocol, ip, remote_port, local_port
 	print(protocol, self.protocols.RLE888, self.protocol )
 
 	self.leds = {}
-	for i=1, led_nb do self.leds[i] = {0,0,0} end
+	for i=1, led_nb do self.leds[i] = {0,0,0,0} end
 
 	-- print("LEDs controller start using "..self.protocol.." protocol")x`
 end
@@ -114,7 +114,7 @@ function LEDsController:sendArtnetDMX(net, sub_uni)
 	-- self:printD(net, sub_uni)
 	local to_send = pack(
 		"AHHbbbbH",
-		"Art-Net",
+		"Art-Net\0",
 		ART_DMX,
 		ARTNET_VERSION,
 		self.count%256,
@@ -125,14 +125,20 @@ function LEDsController:sendArtnetDMX(net, sub_uni)
 	)
 	self.count = self.count + 1
 	local data = self.leds
-	for i=1,LEDS_BY_UNI do
+	local ctn = 0
+	for i=1, LEDS_BY_UNI do
 		local d = data[sub_uni*LEDS_BY_UNI+i]
 		to_send = to_send..pack(
-		"bbb",
+		self.rgbw and "bbbb" or "bbb",
 		d and d[1] or 0,
 		d and d[2] or 0,
-		d and d[3] or 0
-	)
+		d and d[3] or 0,
+		d and d[4] or 0
+		)
+		ctn = ctn + (self.rgbw and 4 or 3)
+	end
+	for i=1, 512-ctn do
+		to_send = to_send.."\0"
 	end
 	self.udp:sendto(to_send, self.ip, self.port)
 end
@@ -141,7 +147,7 @@ function LEDsController:sendArtnetSync()
 	self:printD("Sync")
 	local to_send = pack(
 		"AHHH",
-		"Art-Net",
+		"Art-Net\0",
 		ART_SYNC,
 		ARTNET_VERSION,
 		0x0000
@@ -150,14 +156,14 @@ function LEDsController:sendArtnetSync()
 end
 
 function LEDsController:sendAllArtnetDMX(nb_led, update, delay)
-	local max_update = math.floor(512 / 3)
+	local max_update = math.floor(512 / (self.rgbw and 4 or 3))
 	local nb_update = math.ceil(nb_led / max_update)
 	if update then
 		delay = delay / (nb_update+1)
 	else
 		delay = delay / nb_update
 	end
-	self:printD("#artnet",nb_led, nb_update+1)
+	-- self:printD("#artnet",nb_led, nb_update+1)
 	for i=0, nb_update-1 do
 		self:sendArtnetDMX(0, i)
 		socket.sleep(delay)
@@ -335,13 +341,13 @@ function LEDsController:sendArtnetPoll()
 
 		local to_send = pack(
 		"AHHbb",
-		"Art-Net",
+		"Art-Net\0",
 		ART_POLL, -- Opcode
 		ARTNET_VERSION,
 		06,
 		00
 	)
-	self.udp:sendto(to_send, "192.168.1.255", self.port)
+	self.udp:sendto(to_send, "10.80.1.255", self.port)
 end
 
 function LEDsController:receiveArtnet(receive_data, remote_ip, remote_port)
@@ -702,8 +708,8 @@ end
 
 --------------------------------------------------------------------------------
 
-function LEDsController:send(delay_pqt)
-	self:protocol(self.led_nb, true, delay_pqt or 0)
+function LEDsController:send(delay_pqt, sync)
+	self:protocol(self.led_nb, sync, delay_pqt or 0)
 end
 
 --------------------------------------------------------------------------------
