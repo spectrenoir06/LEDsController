@@ -27,7 +27,7 @@ end
 local UDP_PORT           = 6454
 local MAX_UPDATE_SIZE    = 1280 -- max 1280 after the driver explode == 426 RGB LEDs
 local SHOW_DEBUG         = true
-local LEDS_BY_UNI        = 100
+local LEDS_BY_UNI        = 170
 
 
 local ART_POLL           = 0x2000
@@ -35,6 +35,7 @@ local ART_REPLY          = 0x2100
 local ART_DMX            = 0x5000
 local ART_SYNC           = 0x5200
 local ARTNET_VERSION     = 0x0E00
+local ART_HEAD           = love and "Art-Net" or "Art-Net\0"
 
 
 local LED_RGB_888        = 0
@@ -55,6 +56,8 @@ local LED_RGB_SET        = 7
 local LED_LERP           = 8
 local SET_MODE           = 9
 local REBOOT             = 10
+
+
 
 local LEDsController = class("LEDsController")
 
@@ -83,12 +86,26 @@ function LEDsController:initialize(led_nb, protocol, ip, remote_port, local_port
 	self.udp:setoption("broadcast", true)
 
 	self.protocol = self.protocols[protocol] or self.sendAllArtnetDMX
-	print(protocol, self.protocols.RLE888, self.protocol )
+	-- print(protocol, self.protocols.RLE888, self.protocol )
+
+	self.leds_by_uni = LEDS_BY_UNI
+	self.artnet_remote = {}
 
 	self.leds = {}
 	for i=1, led_nb do self.leds[i] = {0,0,0,0} end
 
 	-- print("LEDs controller start using "..self.protocol.." protocol")x`
+end
+
+function LEDsController:loadMap(map)
+	self.map = {}
+	for k,v in ipairs(map) do
+		if self.map[v.x+1] == nil then self.map[v.x+1]={} end
+		self.map[v.x+1][v.y+1] = {
+			uni = v.uni,
+			id = v.id
+		}
+	end
 end
 
 -------------------------------------------------------------------------------
@@ -111,10 +128,10 @@ end
 --------------------------------- ART-NET -------------------------------------
 
 function LEDsController:sendArtnetDMX(net, sub_uni)
-	-- self:printD(net, sub_uni)
+	self:printD("ART-NET DMX:",sub_uni)
 	local to_send = pack(
 		"AHHbbbbH",
-		"Art-Net\0",
+		ART_HEAD,
 		ART_DMX,
 		ARTNET_VERSION,
 		self.count%256,
@@ -126,28 +143,32 @@ function LEDsController:sendArtnetDMX(net, sub_uni)
 	self.count = self.count + 1
 	local data = self.leds
 	local ctn = 0
-	for i=1, LEDS_BY_UNI do
-		local d = data[sub_uni*LEDS_BY_UNI+i]
+	for i=1, self.leds_by_uni do
+		local d = data[sub_uni*self.leds_by_uni+i]
 		to_send = to_send..pack(
-		self.rgbw and "bbbb" or "bbb",
-		d and d[1] or 0,
-		d and d[2] or 0,
-		d and d[3] or 0,
-		d and d[4] or 0
+			self.rgbw and "bbbb" or "bbb",
+			d and d[1] or 0,
+			d and d[2] or 0,
+			d and d[3] or 0,
+			d and (d[4] or 0)
 		)
 		ctn = ctn + (self.rgbw and 4 or 3)
 	end
 	for i=1, 512-ctn do
 		to_send = to_send.."\0"
 	end
-	self.udp:sendto(to_send, self.ip, self.port)
+	if self.artnet_remote[sub_uni] then
+		self.udp:sendto(to_send, self.artnet_remote[sub_uni], self.port)
+	else
+		self.udp:sendto(to_send, self.ip, self.port)
+	end
 end
 
 function LEDsController:sendArtnetSync()
-	self:printD("Sync")
+	self:printD("ART-NET Sync")
 	local to_send = pack(
 		"AHHH",
-		"Art-Net\0",
+		ART_HEAD,
 		ART_SYNC,
 		ARTNET_VERSION,
 		0x0000
@@ -712,6 +733,14 @@ function LEDsController:send(delay_pqt, sync)
 	self:protocol(self.led_nb, sync, delay_pqt or 0)
 end
 
+function LEDsController:setArtnetLED(x, y, color)
+	if self.map[x+1] then
+		local m = self.map[x+1][y+1]
+		if m then
+			self.leds[m.uni*self.leds_by_uni + m.id + 1] = color
+		end
+	end
+end
 --------------------------------------------------------------------------------
 
 function color_wheel(WheelPos)
