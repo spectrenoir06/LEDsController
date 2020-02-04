@@ -224,7 +224,7 @@ function LEDsController:sendArtnetPollReply(ip, port)
 	for i=1,24 do
 			local to_send = pack(
 			"AHb4HHbbHbbHAAAHI5b7Ab4bbA",
-			"Art-Net\0",
+			ART_HEAD,
 			ART_REPLY, -- Opcode
 			192,168,1,i, -- ip
 			6454, -- eth port
@@ -362,13 +362,13 @@ function LEDsController:sendArtnetPoll()
 
 		local to_send = pack(
 		"AHHbb",
-		"Art-Net\0",
+		ART_HEAD,
 		ART_POLL, -- Opcode
 		ARTNET_VERSION,
 		06,
 		00
 	)
-	self.udp:sendto(to_send, "10.80.1.255", self.port)
+	self.udp:sendto(to_send, "255.255.255.255", self.port)
 end
 
 function LEDsController:receiveArtnet(receive_data, remote_ip, remote_port)
@@ -381,8 +381,8 @@ function LEDsController:receiveArtnet(receive_data, remote_ip, remote_port)
 		return "poll"
 	elseif opcode == ART_REPLY then
 		print("Art-Net POLL_REPLY from:", remote_ip, remote_port)
-		self:decodeArtnetReply(receive_data)
-		return "reply"
+		local d = self:decodeArtnetReply(receive_data)
+		return "reply", d 
 	elseif opcode == ART_DMX then
 		print("Art-Net DMX from:", remote_ip, remote_port)
 		local uni,net,seq = self:decodeArtnetDMX(receive_data)
