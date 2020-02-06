@@ -130,7 +130,7 @@ end
 function LEDsController:sendArtnetDMX(net, sub_uni)
 	self:printD("ART-NET DMX:",sub_uni)
 	local to_send = pack(
-		"AHHbbbbH",
+		"AHHbbbb>H",
 		ART_HEAD,
 		ART_DMX,
 		ARTNET_VERSION,
@@ -138,25 +138,28 @@ function LEDsController:sendArtnetDMX(net, sub_uni)
 		0,
 		sub_uni,
 		net,
-		0x0002
+		self.leds_by_uni*3
 	)
 	self.count = self.count + 1
 	local data = self.leds
 	local ctn = 0
-	for i=1, self.leds_by_uni do
-		local d = data[sub_uni*self.leds_by_uni+i]
+	local size = self.leds_by_uni
+	local mode = self.rgbw and "bbbb" or "bbb"
+	local mode_s = self.rgbw and 4 or 3
+	for i=1, size do
+		local d = data[sub_uni*size+i]
 		to_send = to_send..pack(
-			self.rgbw and "bbbb" or "bbb",
+			mode,
 			d and d[1] or 0,
 			d and d[2] or 0,
 			d and d[3] or 0,
-			d and (d[4] or 0)
+			d and d[4] or 0
 		)
-		ctn = ctn + (self.rgbw and 4 or 3)
+		ctn = ctn + mode_s
 	end
-	for i=1, 512-ctn do
-		to_send = to_send.."\0"
-	end
+	-- for i=1, 512-ctn do
+	-- 	to_send = to_send.."\0"
+	-- end
 	if self.artnet_remote[sub_uni] then
 		self.udp:sendto(to_send, self.artnet_remote[sub_uni], self.port)
 	else
@@ -187,11 +190,15 @@ function LEDsController:sendAllArtnetDMX(nb_led, update, delay)
 	-- self:printD("#artnet",nb_led, nb_update+1)
 	for i=0, nb_update-1 do
 		self:sendArtnetDMX(0, i)
-		socket.sleep(delay)
+		if delay then
+			socket.sleep(delay)
+		end
 	end
 	if update then
 		self:sendArtnetSync()
-		socket.sleep(delay)
+		if delay then
+			socket.sleep(delay)
+		end
 	end
 end
 
@@ -331,7 +338,7 @@ function LEDsController:decodeArtnetReply(data)
 		Style       = Style,
 		mac         = {mac1,mac2,mac3,mac4,mac5,mac6},
 		remoteIp    = {remoteIp1,remoteIp2,remoteIp3,remoteIp4},
-		bindIndex   = BindIndex
+		bindIndex   = bindIndex
 	}
 	print(string.format([[
 	ip:		%d.%d.%d.%d
@@ -382,7 +389,7 @@ function LEDsController:receiveArtnet(receive_data, remote_ip, remote_port)
 	elseif opcode == ART_REPLY then
 		print("Art-Net POLL_REPLY from:", remote_ip, remote_port)
 		local d = self:decodeArtnetReply(receive_data)
-		return "reply", d 
+		return "reply", d
 	elseif opcode == ART_DMX then
 		print("Art-Net DMX from:", remote_ip, remote_port)
 		local uni,net,seq = self:decodeArtnetDMX(receive_data)
