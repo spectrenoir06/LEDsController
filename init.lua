@@ -1,6 +1,8 @@
 local socket = require("socket")
 local class = require("middleclass")
 local brotli
+local bit = require("bit")
+
 
 local path = ...
 
@@ -162,9 +164,11 @@ function LEDsController:sendArtnetDMX(net, sub_uni)
 	-- for i=1, 512-ctn do
 	-- 	to_send = to_send.."\0"
 	-- end
-	if self.artnet_remote[sub_uni] then
-		self.udp:sendto(to_send, self.artnet_remote[sub_uni], self.port)
-	else
+	local id = bit.bor(bit.lshift(net, 8), bit.band(sub_uni,0xFF))
+	local node = self.artnet_remote[id]
+	if node then
+		self.udp:sendto(to_send, node.ip, node.port)
+	elseif self.ip then
 		self.udp:sendto(to_send, self.ip, self.port)
 	end
 end
@@ -178,7 +182,7 @@ function LEDsController:sendArtnetSync()
 		ARTNET_VERSION,
 		0x0000
 	)
-	self.udp:sendto(to_send, self.ip, self.port)
+	self.udp:sendto(to_send, "255.255.255.255", self.port)
 end
 
 function LEDsController:sendAllArtnetDMX(nb_led, update, delay)
@@ -382,29 +386,39 @@ end
 
 function LEDsController:receiveArtnet(receive_data, remote_ip, remote_port)
 	local _,_, opcode = upack(receive_data, "zH")
-	-- print("RECEIVE from", remote_ip, remote_port)
-	-- print(string.format("0x%04x",opcode))
+	-- self:printD("RECEIVE from", remote_ip, remote_port)
+	-- self:printD(string.format("0x%04x",opcode))
 	if opcode == ART_POLL then
-		-- print("Art-Net POLL from:", remote_ip, remote_port)
+		-- self:printD("Art-Net POLL from:", remote_ip, remote_port)
 		-- self:sendArtnetPollReply(remote_ip, remote_port)
 		return "poll"
 	elseif opcode == ART_REPLY then
-		print("Art-Net POLL_REPLY from:", remote_ip, remote_port)
+		self:printD("Art-Net POLL_REPLY from:", remote_ip, remote_port)
 		local d = self:decodeArtnetReply(receive_data)
 		return "reply", d
 	elseif opcode == ART_DMX then
-		print("Art-Net DMX from:", remote_ip, remote_port)
+		self:printD("Art-Net DMX from:", remote_ip, remote_port)
 		local uni,net,seq = self:decodeArtnetDMX(receive_data)
 			-- if uni == 3 then
 			-- 	return "sync"
 			-- end
 		return "dmx"
 	elseif opcode == ART_SYNC then
-		print("Art-Net SYNC from:", remote_ip, remote_port)
+		self:printD("Art-Net SYNC from:", remote_ip, remote_port)
 		return "sync"
 	end
 end
 
+function LEDsController:addArtnetNode(net, sub_uni, ip, port, nb)
+	nb = nb or 1
+	for i=0,nb-1 do
+		local id = bit.bor(bit.lshift(net, 8), bit.band(sub_uni+i,0xFF))
+		self:printD("addArtnetNode:", net, sub_uni, ip, port)
+		self.artnet_remote[id] = {}
+		self.artnet_remote[id].ip = ip
+		self.artnet_remote[id].port = port
+	end
+end
 
 ------------------------------- RGB888 ----------------------------------------
 
