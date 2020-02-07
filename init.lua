@@ -2,6 +2,8 @@ local socket = require("socket")
 local class = require("middleclass")
 local brotli
 
+local path = ...
+
 if not (love and love.system.getOS() == "Android") then
 	brotli = require("brotli")
 end
