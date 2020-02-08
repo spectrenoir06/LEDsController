@@ -197,7 +197,7 @@ function LEDsController:sendAllArtnetDMX(nb_led, update, delay)
 	else
 		delay = delay / nb_update
 	end
-	self:printD("#artnet",nb_led, nb_update+1)
+	self:printD("#artnet", nb_led, nb_update+(update and 1 or 0))
 	for i=0, nb_update-1 do
 		self:sendArtnetDMX(0, i)
 		if delay then
