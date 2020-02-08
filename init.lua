@@ -30,7 +30,6 @@ end
 
 local UDP_PORT           = 6454
 local MAX_UPDATE_SIZE    = 1280 -- max 1280 after the driver explode == 426 RGB LEDs
-local SHOW_DEBUG         = true
 local LEDS_BY_UNI        = 170
 
 
@@ -69,7 +68,7 @@ function LEDsController:initialize(led_nb, protocol, ip, remote_port, local_port
 	self.led_nb = led_nb
 	self.ip = ip
 	self.port = remote_port or UDP_PORT
-	self.debug = true
+	self.debug = false
 	self.count = 0
 
 	if protocol == "BRO888" and not brotli then
@@ -186,14 +185,14 @@ function LEDsController:sendArtnetSync()
 end
 
 function LEDsController:sendAllArtnetDMX(nb_led, update, delay)
-	local max_update = math.floor(512 / (self.rgbw and 4 or 3))
-	local nb_update = math.ceil(nb_led / max_update)
+	-- local max_update = math.floor(512 / (self.rgbw and 4 or 3))
+	local nb_update = math.ceil(nb_led / self.leds_by_uni)
 	if update then
 		delay = delay / (nb_update+1)
 	else
 		delay = delay / nb_update
 	end
-	-- self:printD("#artnet",nb_led, nb_update+1)
+	self:printD("#artnet",nb_led, nb_update+1)
 	for i=0, nb_update-1 do
 		self:sendArtnetDMX(0, i)
 		if delay then
