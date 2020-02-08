@@ -64,15 +64,16 @@ local REBOOT             = 10
 
 local LEDsController = class("LEDsController")
 
-function LEDsController:initialize(led_nb, protocol, ip, remote_port, local_port)
-	self.led_nb = led_nb
-	self.ip = ip
-	self.port = remote_port or UDP_PORT
-	self.debug = false
+function LEDsController:initialize(t)
+	self.led_nb = t.led_nb
+	self.ip = t.ip
+	self.port = t.remote_port or UDP_PORT
+	self.debug = t.debug or false
 	self.count = 0
+	self.rgbw = t.rgbw
 
-	if protocol == "BRO888" and not brotli then
-		protocol = "RLE888"
+	if t.protocol == "BRO888" and not brotli then
+		t.protocol = "RLE888"
 	end
 
 	self.protocols = {
@@ -84,18 +85,22 @@ function LEDsController:initialize(led_nb, protocol, ip, remote_port, local_port
 	}
 
 	self.udp = assert(socket.udp())
-	self.udp:setsockname("*", local_port or self.port)
+	self.udp:setsockname("*", t.local_port or self.port)
 	self.udp:settimeout(0)
 	self.udp:setoption("broadcast", true)
 
-	self.protocol = self.protocols[protocol] or self.sendAllArtnetDMX
-	-- print(protocol, self.protocols.RLE888, self.protocol )
+	self.protocol = self.protocols[t.protocol] or self.sendAllArtnetDMX
+	-- print(t.protocol, self.protocols.RLE888, self.protocol )
 
-	self.leds_by_uni = LEDS_BY_UNI
+	self.leds_by_uni = t.leds_by_uni or LEDS_BY_UNI
 	self.artnet_remote = {}
 
 	self.leds = {}
-	for i=1, led_nb do self.leds[i] = {0,0,0,0} end
+	for i=1, self.led_nb do self.leds[i] = {0,0,0,0} end
+
+	if t.map then
+		self:loadMap(t.map)
+	end
 
 	-- print("LEDs controller start using "..self.protocol.." protocol")x`
 end
@@ -448,7 +453,6 @@ function LEDsController:sendAll888(nb_led, update, delay)
 	local last_off = max_update * (nb_update-1)
 	self:sendLED888(last_off, nb_led - last_off, update)
 	socket.sleep(delay/nb_update)
-	print("\n")
 end
 
 ------------------------------- RGB565 ----------------------------------------
