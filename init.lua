@@ -85,7 +85,8 @@ function LEDsController:initialize(t)
 	}
 
 	self.udp = assert(socket.udp())
-	self.udp:setsockname("*", t.local_port or self.port)
+
+	assert(self.udp:setsockname("0.0.0.0", self.port))
 	self.udp:settimeout(0)
 	self.udp:setoption("broadcast", true)
 
