@@ -51,6 +51,8 @@ local LED_RLE_888        = 11
 local LED_RLE_888_UPDATE = 12
 local LED_BRO_888        = 13
 local LED_BRO_888_UPDATE = 14
+local LED_Z_888          = 15
+local LED_Z_888_UPDATE   = 16
 
 local LED_UPDATE         = 4
 local GET_INFO           = 5
@@ -594,8 +596,43 @@ function LEDsController:sendRLE888(data, show, delay)
 	socket.sleep(delay)
 end
 
+function LEDsController:sendAllRLE888(led_nb, leds_show, delay_pqt)
+
+	local data, size = self:compressRLE888(led_nb)
+
+	if #data < math.ceil(led_nb / (MAX_UPDATE_SIZE/3)) then
+		self:sendRLE888(data, leds_show, delay_pqt)
+	else
+		self:sendAll888(led_nb, leds_show, delay_pqt)
+	end
+
+	self:printD(string.format([[
+	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	RLE-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (RLE-888 VS RGB-888)
+	]],
+
+		math.ceil(led_nb / LEDS_BY_UNI)+1,
+		led_nb*3/1024,
+		(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
+
+		math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
+		(led_nb*3)/1024,
+		math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
+
+		#data,
+		size/1024,
+		#data * 60,
+		size/(led_nb*3)*100
+	))
+end
+
+
+---------------------------------- BRO888 --------------------------------------
+
+
 function LEDsController:compressBRO888()
-	-- printD("compressBRO888", off, len, show)
+	self:printD("compressBRO888", off, len, show)
 	local data = self.leds
 	local to_compress = ""
 	for i=0,self.led_nb-1 do
@@ -612,7 +649,7 @@ function LEDsController:compressBRO888()
 		lgwin = 10,
 		lgblock = 16,
 	}
-	cmp = brotli.compress(to_compress,options)
+	local cmp = brotli.compress(to_compress,options)
 	return cmp, #cmp
 end
 
@@ -627,49 +664,18 @@ end
 function LEDsController:sendAllBRO888(led_nb, leds_show, delay_pqt)
 
 	local bro_data, bro_size = self:compressBRO888()
+	local z_data, z_size = self:compressZ888()
+	local rle_data, rle_size = self:compressRLE888(self.led_nb)
+
 	self:sendBRO888(bro_data, leds_show, delay_pqt)
 
-	print(string.format([[
-	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RGB-565:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	BRO-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (BRO-888 VS RGB-888)
-	]],
-
-		math.ceil(led_nb / LEDS_BY_UNI)+1,
-		led_nb*3/1024,
-		(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
-
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
-		(led_nb*3)/1024,
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
-
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/2)),
-		(led_nb*2)/1024,
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/2))*60,
-
-		math.ceil(bro_size / MAX_UPDATE_SIZE),
-		bro_size/1024,
-		math.ceil(bro_size / MAX_UPDATE_SIZE)*60,
-		bro_size/(led_nb*3)*100
-	))
-end
-
-function LEDsController:sendAllRLE888(led_nb, leds_show, delay_pqt)
-
-	local data, size = self:compressRLE888(led_nb)
-
-	if #data < math.ceil(led_nb / (MAX_UPDATE_SIZE/3)) then
-		self:sendRLE888(data, leds_show, delay_pqt)
-	else
-		self:sendAll888(led_nb, leds_show, delay_pqt)
-	end
-
-	print(string.format([[
+	self:printD(string.format([[
 	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
 	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
 	RGB-565:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
 	RLE-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (RLE-888 VS RGB-888)
+	BRO-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (BRO-888 VS RGB-888)
+	Z-888:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-888 VS RGB-888)
 	]],
 
 		math.ceil(led_nb / LEDS_BY_UNI)+1,
@@ -684,12 +690,78 @@ function LEDsController:sendAllRLE888(led_nb, leds_show, delay_pqt)
 		(led_nb*2)/1024,
 		math.ceil(led_nb / (MAX_UPDATE_SIZE/2))*60,
 
-		#data,
-		size/1024,
-		#data * 60,
-		size/(led_nb*3)*100
+		math.ceil(rle_size / MAX_UPDATE_SIZE),
+		rle_size/1024,
+		math.ceil(rle_size / MAX_UPDATE_SIZE)*60,
+		rle_size/(led_nb*3)*100,
+
+		math.ceil(bro_size / MAX_UPDATE_SIZE),
+		bro_size/1024,
+		math.ceil(bro_size / MAX_UPDATE_SIZE)*60,
+		bro_size/(led_nb*3)*100,
+
+		math.ceil(z_size / MAX_UPDATE_SIZE),
+		z_size/1024,
+		math.ceil(z_size / MAX_UPDATE_SIZE)*60,
+		z_size/(led_nb*3)*100
 	))
 end
+
+---------------------------------- Z888 ----------------------------------------
+
+
+function LEDsController:compressZ888()
+	self:printD("compressZ888", off, len, show)
+	local data = self.leds
+	local to_compress = ""
+	for i=0,self.led_nb-1 do
+		to_compress = to_compress..pack(
+		"bbb",
+		data[i+1][1],
+		data[i+1][2],
+		data[i+1][3]
+	)
+	end
+	local cmp = love.data.compress("string", "zlib", to_compress, 9)
+	return cmp, #cmp
+end
+
+function LEDsController:sendZ888(data, leds_show, delay_pqt)
+	self:printD("#Z888", #data, leds_show)
+	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, 0, self.led_nb)..data
+	self.count = self.count + 1
+	self.udp:sendto(to_send, self.ip, self.port)
+	socket.sleep(delay_pqt)
+end
+
+function LEDsController:sendAllZ888(led_nb, leds_show, delay_pqt)
+
+	local z_data, z_size = self:compressZ888()
+
+	self:sendZ888(z_data, leds_show, delay_pqt)
+
+	self:printD(string.format([[
+	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	Z-888:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-888 VS RGB-888)
+	]],
+
+		math.ceil(led_nb / LEDS_BY_UNI)+1,
+		led_nb*3/1024,
+		(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
+
+		math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
+		(led_nb*3)/1024,
+		math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
+
+		math.ceil(z_size / MAX_UPDATE_SIZE),
+		z_size/1024,
+		math.ceil(z_size / MAX_UPDATE_SIZE)*60,
+		z_size/(led_nb*3)*100
+	))
+end
+
+--------------------------------------------------------------------------------
 
 function LEDsController:start_dump(pro, name)
 	local protocol = 42
@@ -752,6 +824,11 @@ end
 function LEDsController:dump_BRO()
 	local bro_data, bro_size = self:compressBRO888()
 	self.dump_file:write(pack("H", bro_size) .. bro_data )
+end
+
+function LEDsController:dump_Z()
+	local z_data, z_size = self:compressZ888()
+	self.dump_file:write(pack("H", z_size) .. z_data )
 end
 
 --------------------------------------------------------------------------------
