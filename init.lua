@@ -6,9 +6,9 @@ local bit = require("bit")
 
 local path = ...
 
-if not (love and love.system.getOS() == "Android") then
-	brotli = require("brotli")
-end
+-- if not (love and love.system.getOS() == "Android") then
+-- 	brotli = require("brotli")
+-- end
 
 local upack = nil
 local pack   = nil
