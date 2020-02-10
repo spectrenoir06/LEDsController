@@ -109,14 +109,14 @@ function LEDsController:initialize(t)
 end
 
 function LEDsController:loadMap(map)
-	self.map = {}
-	for k,v in ipairs(map) do
-		if self.map[v.x+1] == nil then self.map[v.x+1]={} end
-		self.map[v.x+1][v.y+1] = {
-			uni = v.uni,
-			id = v.id
-		}
-	end
+	self.map = map
+	-- for k,v in ipairs(map) do
+	-- 	if self.map[v.x+1] == nil then self.map[v.x+1]={} end
+	-- 	self.map[v.x+1][v.y+1] = {
+	-- 		uni = v.uni,
+	-- 		id = v.id
+	-- 	}
+	-- end
 end
 
 -------------------------------------------------------------------------------
@@ -353,7 +353,7 @@ function LEDsController:decodeArtnetReply(data)
 		remoteIp    = {remoteIp1,remoteIp2,remoteIp3,remoteIp4},
 		bindIndex   = bindIndex
 	}
-	print(string.format([[
+	self:printD(string.format([[
 	ip:		%d.%d.%d.%d
 	port:		%d
 	art-vers:	0x%04x
@@ -418,9 +418,10 @@ end
 
 function LEDsController:addArtnetNode(net, sub_uni, ip, port, nb)
 	nb = nb or 1
+	print("addArtnetNode",net, sub_uni, ip, port, nb)
 	for i=0,nb-1 do
 		local id = bit.bor(bit.lshift(net, 8), bit.band(sub_uni+i,0xFF))
-		self:printD("addArtnetNode:", net, sub_uni, ip, port)
+		self:printD("addArtnetNode:", net, sub_uni, ip, port, id)
 		self.artnet_remote[id] = {}
 		self.artnet_remote[id].ip = ip
 		self.artnet_remote[id].port = port
@@ -632,7 +633,7 @@ end
 
 
 function LEDsController:compressBRO888()
-	self:printD("compressBRO888", off, len, show)
+	-- self:printD("compressBRO888")
 	local data = self.leds
 	local to_compress = ""
 	for i=0,self.led_nb-1 do
@@ -664,54 +665,54 @@ end
 function LEDsController:sendAllBRO888(led_nb, leds_show, delay_pqt)
 
 	local bro_data, bro_size = self:compressBRO888()
-	local z_data, z_size = self:compressZ888()
-	local rle_data, rle_size = self:compressRLE888(self.led_nb)
+	-- local z_data, z_size = self:compressZ888()
+	-- local rle_data, rle_size = self:compressRLE888(self.led_nb)
 
 	self:sendBRO888(bro_data, leds_show, delay_pqt)
 
-	self:printD(string.format([[
-	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RGB-565:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RLE-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (RLE-888 VS RGB-888)
-	BRO-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (BRO-888 VS RGB-888)
-	Z-888:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-888 VS RGB-888)
-	]],
-
-		math.ceil(led_nb / LEDS_BY_UNI)+1,
-		led_nb*3/1024,
-		(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
-
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
-		(led_nb*3)/1024,
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
-
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/2)),
-		(led_nb*2)/1024,
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/2))*60,
-
-		math.ceil(rle_size / MAX_UPDATE_SIZE),
-		rle_size/1024,
-		math.ceil(rle_size / MAX_UPDATE_SIZE)*60,
-		rle_size/(led_nb*3)*100,
-
-		math.ceil(bro_size / MAX_UPDATE_SIZE),
-		bro_size/1024,
-		math.ceil(bro_size / MAX_UPDATE_SIZE)*60,
-		bro_size/(led_nb*3)*100,
-
-		math.ceil(z_size / MAX_UPDATE_SIZE),
-		z_size/1024,
-		math.ceil(z_size / MAX_UPDATE_SIZE)*60,
-		z_size/(led_nb*3)*100
-	))
+	-- self:printD(string.format([[
+	-- ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- RGB-565:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- RLE-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (RLE-888 VS RGB-888)
+	-- BRO-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (BRO-888 VS RGB-888)
+	-- Z-888:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-888 VS RGB-888)
+	-- ]],
+	--
+	-- 	math.ceil(led_nb / LEDS_BY_UNI)+1,
+	-- 	led_nb*3/1024,
+	-- 	(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
+	--
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
+	-- 	(led_nb*3)/1024,
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
+	--
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/2)),
+	-- 	(led_nb*2)/1024,
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/2))*60,
+	--
+	-- 	math.ceil(rle_size / MAX_UPDATE_SIZE),
+	-- 	rle_size/1024,
+	-- 	math.ceil(rle_size / MAX_UPDATE_SIZE)*60,
+	-- 	rle_size/(led_nb*3)*100,
+	--
+	-- 	math.ceil(bro_size / MAX_UPDATE_SIZE),
+	-- 	bro_size/1024,
+	-- 	math.ceil(bro_size / MAX_UPDATE_SIZE)*60,
+	-- 	bro_size/(led_nb*3)*100,
+	--
+	-- 	math.ceil(z_size / MAX_UPDATE_SIZE),
+	-- 	z_size/1024,
+	-- 	math.ceil(z_size / MAX_UPDATE_SIZE)*60,
+	-- 	z_size/(led_nb*3)*100
+	-- ))
 end
 
 ---------------------------------- Z888 ----------------------------------------
 
 
 function LEDsController:compressZ888()
-	self:printD("compressZ888", off, len, show)
+	-- self:printD("compressZ888")
 	local data = self.leds
 	local to_compress = ""
 	for i=0,self.led_nb-1 do
@@ -837,13 +838,14 @@ function LEDsController:send(delay_pqt, sync)
 	self:protocol(self.led_nb, sync, delay_pqt or 0)
 end
 
-function LEDsController:setArtnetLED(x, y, color)
-	if self.map[x+1] then
-		local m = self.map[x+1][y+1]
-		if m then
-			self.leds[m.uni*self.leds_by_uni + m.id + 1] = color
-		end
-	end
+function LEDsController:setArtnetLED(m, color)
+	-- if self.map[x+1] then
+	-- 	local m = self.map[x+1][y+1]
+	-- 	if m then
+	-- 		self.leds[m.uni*self.leds_by_uni + m.id + 1] = color
+	-- 	end
+	-- end
+	self.leds[m.uni * self.leds_by_uni + m.id + 1] = color
 end
 --------------------------------------------------------------------------------
 
