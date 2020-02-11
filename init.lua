@@ -73,6 +73,8 @@ function LEDsController:initialize(t)
 	self.debug = t.debug or false
 	self.count = 0
 	self.rgbw = t.rgbw
+	self.bright = 1
+	self.rgbw_mode = t.rgbw_mode or 0
 
 	if t.protocol == "BRO888" and not brotli then
 		t.protocol = "RLE888"
@@ -838,14 +840,26 @@ function LEDsController:send(delay_pqt, sync)
 	self:protocol(self.led_nb, sync, delay_pqt or 0)
 end
 
-function LEDsController:setArtnetLED(m, color)
-	-- if self.map[x+1] then
-	-- 	local m = self.map[x+1][y+1]
-	-- 	if m then
-	-- 		self.leds[m.uni*self.leds_by_uni + m.id + 1] = color
-	-- 	end
-	-- end
-	self.leds[m.uni * self.leds_by_uni + m.id + 1] = color
+function LEDsController:setArtnetLED(m, r, g, b, w)
+	if self.rgbw and self.rgbw_mode ~= 0 then
+		if self.rgbw_mode == 1 then
+			w = math.min(r,g,b)
+		elseif self.rgbw_mode == 2 then
+			w = math.min(r,g,b)
+			r,g,b = r-w, g-w, b-w
+		elseif self.rgbw_mode == 3 then
+			w = (math.max(r,g,b) + math.min(r,g,b)) / 2
+		end
+	else
+		w = 0
+	end
+
+	r = r * controller.bright
+	g = g * controller.bright
+	b = b * controller.bright
+	w = w * controller.bright
+
+	self.leds[m.uni * self.leds_by_uni + m.id + 1] = {r,g,b,w}
 end
 --------------------------------------------------------------------------------
 
