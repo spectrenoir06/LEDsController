@@ -1,14 +1,17 @@
 local socket = require("socket")
 local class = require("middleclass")
 local brotli
-local bit = require("bit")
+local bit
 
+if type(jit) == "table" then
+	bit = require("bit")
+end
 
 local path = ...
 
--- if not (love and love.system.getOS() == "Android") then
--- 	brotli = require("brotli")
--- end
+if not (love and love.system.getOS() == "Android") then
+	brotli = require("brotli")
+end
 
 local upack = nil
 local pack   = nil
@@ -77,48 +80,42 @@ function LEDsController:initialize(t)
 	self.rgbw_mode = t.rgbw_mode or 0
 
 	if t.protocol == "BRO888" and not brotli then
-		t.protocol = "RLE888"
+		t.protocol = "RGB888"
 	end
 
 	self.protocols = {
-		artnet = self.sendAllArtnetDMX,
+		artnet = self.sendArtnetDMX_ext,
+		artnet_big = self.sendAllArtnetDMX,
 		RGB888 = self.sendAll888,
 		RGB565 = self.sendAll565,
 		RLE888 = self.sendAllRLE888,
-		BRO888 = self.sendAllBRO888
+		BRO888 = self.sendAllBRO888,
+		Z888   = self.sendAllZ888,
 	}
 
-	self.udp = assert(socket.udp())
 
-	assert(self.udp:setsockname("0.0.0.0", self.port))
-	self.udp:settimeout(0)
-	self.udp:setoption("broadcast", true)
+	if t.udp then
+		self.udp = t.udp
+	else
+		self.udp = assert(socket.udp())
+		assert(self.udp:setsockname("0.0.0.0", self.port))
+		self.udp:settimeout(0)
+		self.udp:setoption("broadcast", true)
+	end
 
 	self.protocol = self.protocols[t.protocol] or self.sendAllArtnetDMX
 	-- print(t.protocol, self.protocols.RLE888, self.protocol )
 
 	self.leds_by_uni = t.leds_by_uni or LEDS_BY_UNI
-	self.artnet_remote = {}
 
 	self.leds = {}
 	for i=1, self.led_nb do self.leds[i] = {0,0,0,0} end
 
-	if t.map then
-		self:loadMap(t.map)
-	end
+	self.map = t.map
+	self.uni = t.uni or 0
+	self.net = t.net or 0
 
-	-- print("LEDs controller start using "..self.protocol.." protocol")x`
-end
-
-function LEDsController:loadMap(map)
-	self.map = map
-	-- for k,v in ipairs(map) do
-	-- 	if self.map[v.x+1] == nil then self.map[v.x+1]={} end
-	-- 	self.map[v.x+1][v.y+1] = {
-	-- 		uni = v.uni,
-	-- 		id = v.id
-	-- 	}
-	-- end
+	-- print("LEDs controller start using "..self.protocol.." protocol")
 end
 
 -------------------------------------------------------------------------------
@@ -140,8 +137,8 @@ end
 
 --------------------------------- ART-NET -------------------------------------
 
-function LEDsController:sendArtnetDMX(net, sub_uni)
-	self:printD("ART-NET DMX:",sub_uni)
+function LEDsController:sendArtnetDMX(net, sub_uni, off)
+	self:printD("ART-NET DMX:", net, sub_uni, off)
 	local to_send = pack(
 		"AHHbbbb>H",
 		ART_HEAD,
@@ -160,7 +157,7 @@ function LEDsController:sendArtnetDMX(net, sub_uni)
 	local mode = self.rgbw and "bbbb" or "bbb"
 	local mode_s = self.rgbw and 4 or 3
 	for i=1, size do
-		local d = data[sub_uni*size+i]
+		local d = data[off*size+i]
 		to_send = to_send..pack(
 			mode,
 			d and d[1] or 0,
@@ -170,15 +167,41 @@ function LEDsController:sendArtnetDMX(net, sub_uni)
 		)
 		ctn = ctn + mode_s
 	end
-	-- for i=1, 512-ctn do
-	-- 	to_send = to_send.."\0"
-	-- end
-	local id = bit.bor(bit.lshift(net, 8), bit.band(sub_uni,0xFF))
-	local node = self.artnet_remote[id]
-	if node then
-		self.udp:sendto(to_send, node.ip, node.port)
-	elseif self.ip then
-		self.udp:sendto(to_send, self.ip, self.port)
+
+	self.udp:sendto(to_send, self.ip, self.port)
+end
+
+
+function LEDsController:sendArtnetDMX_ext(nb_led, update, delay, ctn)
+	self:printD("ART-NET ext DMX:")
+	local to_send = pack(
+		"AHHbbbb>H",
+		ART_HEAD,
+		ART_DMX,
+		ARTNET_VERSION,
+		ctn%256,
+		0,
+		self.uni,
+		self.net,
+		self.leds_by_uni*3
+	)
+	local data = self.leds
+	local size = self.leds_by_uni
+	local mode = self.rgbw and "bbbb" or "bbb"
+	local mode_s = self.rgbw and 4 or 3
+	for i=1, size do
+		local d = data[i]
+		to_send = to_send..pack(
+			mode,
+			d and d[1] or 0,
+			d and d[2] or 0,
+			d and d[3] or 0,
+			d and d[4] or 0
+		)
+	end
+	self.udp:sendto(to_send, self.ip, self.port)
+	if delay then
+		socket.sleep(delay)
 	end
 end
 
@@ -204,7 +227,7 @@ function LEDsController:sendAllArtnetDMX(nb_led, update, delay)
 	end
 	self:printD("#artnet", nb_led, nb_update+(update and 1 or 0))
 	for i=0, nb_update-1 do
-		self:sendArtnetDMX(0, i)
+		self:sendArtnetDMX(self.net, self.uni+i, i)
 		if delay then
 			socket.sleep(delay)
 		end
@@ -418,22 +441,32 @@ function LEDsController:receiveArtnet(receive_data, remote_ip, remote_port)
 	end
 end
 
-function LEDsController:addArtnetNode(net, sub_uni, ip, port, nb)
-	nb = nb or 1
-	print("addArtnetNode",net, sub_uni, ip, port, nb)
-	for i=0,nb-1 do
-		local id = bit.bor(bit.lshift(net, 8), bit.band(sub_uni+i,0xFF))
-		self:printD("addArtnetNode:", net, sub_uni, ip, port, id)
-		self.artnet_remote[id] = {}
-		self.artnet_remote[id].ip = ip
-		self.artnet_remote[id].port = port
+function LEDsController:setLED(m, r, g, b, w)
+	if self.rgbw and self.rgbw_mode ~= 0 then
+		if self.rgbw_mode == 1 then
+			w = math.min(r,g,b)
+		elseif self.rgbw_mode == 2 then
+			w = math.min(r,g,b)
+			r,g,b = r-w, g-w, b-w
+		elseif self.rgbw_mode == 3 then
+			w = (math.max(r,g,b) + math.min(r,g,b)) / 2
+		end
+	else
+		w = 0
 	end
+
+	r = r * self.bright
+	g = g * self.bright
+	b = b * self.bright
+	w = w * self.bright
+
+	self.leds[m.id+1] = {r,g,b,w}
 end
 
 ------------------------------- RGB888 ----------------------------------------
 
 function LEDsController:sendLED888(off, len, show)
-	self:printD("sendLED888", off, len, show)
+	-- self:printD("sendLED888", off, len, show)
 	local to_send = pack("bbHH", (show and LED_RGB_888_UPDATE or LED_RGB_888), self.count%256, off, len)
 	self.count = self.count + 1
 	local data = self.leds
@@ -451,7 +484,7 @@ end
 function LEDsController:sendAll888(nb_led, update, delay)
 	local max_update = math.floor(MAX_UPDATE_SIZE / 3)
 	local nb_update = math.ceil(nb_led / max_update)
-	self:printD("#888",nb_led, nb_update)
+	self:printD("#RGB888", nb_led*3, nb_update)
 	for i=0, nb_update-2 do
 		self:sendLED888(i * max_update, max_update, false)
 		socket.sleep(delay/nb_update)
@@ -573,7 +606,7 @@ function LEDsController:compressRLE888(led_nb)
 end
 
 function LEDsController:sendRLE888(data, show, delay)
-	self:printD("#RLE", 0, #data)
+	self:printD("#RLE888", #data)
 	-- for k,v in pairs(data) do
 	-- 	print("=",k,v.led_nb,v.off)
 	-- end
@@ -609,25 +642,25 @@ function LEDsController:sendAllRLE888(led_nb, leds_show, delay_pqt)
 		self:sendAll888(led_nb, leds_show, delay_pqt)
 	end
 
-	self:printD(string.format([[
-	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RLE-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (RLE-888 VS RGB-888)
-	]],
-
-		math.ceil(led_nb / LEDS_BY_UNI)+1,
-		led_nb*3/1024,
-		(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
-
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
-		(led_nb*3)/1024,
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
-
-		#data,
-		size/1024,
-		#data * 60,
-		size/(led_nb*3)*100
-	))
+	-- self:printD(string.format([[
+	-- ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- RLE-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (RLE-888 VS RGB-888)
+	-- ]],
+	--
+	-- 	math.ceil(led_nb / LEDS_BY_UNI)+1,
+	-- 	led_nb*3/1024,
+	-- 	(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
+	--
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
+	-- 	(led_nb*3)/1024,
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
+	--
+	-- 	#data,
+	-- 	size/1024,
+	-- 	#data * 60,
+	-- 	size/(led_nb*3)*100
+	-- ))
 end
 
 
@@ -657,7 +690,7 @@ function LEDsController:compressBRO888()
 end
 
 function LEDsController:sendBRO888(data, leds_show, delay_pqt)
-	self:printD("#BRO888", #data, leds_show)
+	self:printD("#BRO888", #data)
 	local to_send = pack("bbHH", (leds_show and LED_BRO_888_UPDATE or LED_BRO_888), self.count%256, 0, self.led_nb)..data
 	self.count = self.count + 1
 	self.udp:sendto(to_send, self.ip, self.port)
@@ -668,9 +701,12 @@ function LEDsController:sendAllBRO888(led_nb, leds_show, delay_pqt)
 
 	local bro_data, bro_size = self:compressBRO888()
 	-- local z_data, z_size = self:compressZ888()
-	-- local rle_data, rle_size = self:compressRLE888(self.led_nb)
+	if bro_size > 1400 then
+		self:sendAllRLE888(led_nb, leds_show, delay_pqt)
+	else
+		self:sendBRO888(bro_data, leds_show, delay_pqt)
+	end
 
-	self:sendBRO888(bro_data, leds_show, delay_pqt)
 
 	-- self:printD(string.format([[
 	-- ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
@@ -836,31 +872,10 @@ end
 
 --------------------------------------------------------------------------------
 
-function LEDsController:send(delay_pqt, sync)
-	self:protocol(self.led_nb, sync, delay_pqt or 0)
+function LEDsController:send(delay_pqt, sync, ctn)
+	self:protocol(self.led_nb, sync, delay_pqt or 0, ctn)
 end
 
-function LEDsController:setArtnetLED(m, r, g, b, w)
-	if self.rgbw and self.rgbw_mode ~= 0 then
-		if self.rgbw_mode == 1 then
-			w = math.min(r,g,b)
-		elseif self.rgbw_mode == 2 then
-			w = math.min(r,g,b)
-			r,g,b = r-w, g-w, b-w
-		elseif self.rgbw_mode == 3 then
-			w = (math.max(r,g,b) + math.min(r,g,b)) / 2
-		end
-	else
-		w = 0
-	end
-
-	r = r * controller.bright
-	g = g * controller.bright
-	b = b * controller.bright
-	w = w * controller.bright
-
-	self.leds[m.uni * self.leds_by_uni + m.id + 1] = {r,g,b,w}
-end
 --------------------------------------------------------------------------------
 
 function color_wheel(WheelPos)
