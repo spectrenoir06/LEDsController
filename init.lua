@@ -702,7 +702,7 @@ function LEDsController:sendAllBRO888(led_nb, leds_show, delay_pqt)
 	local bro_data, bro_size = self:compressBRO888()
 	-- local z_data, z_size = self:compressZ888()
 	if bro_size > 1400 then
-		self:sendAllRLE888(led_nb, leds_show, delay_pqt)
+		self:sendAll888(led_nb, leds_show, delay_pqt)
 	else
 		self:sendBRO888(bro_data, leds_show, delay_pqt)
 	end
@@ -777,7 +777,12 @@ function LEDsController:sendAllZ888(led_nb, leds_show, delay_pqt)
 
 	local z_data, z_size = self:compressZ888()
 
-	self:sendZ888(z_data, leds_show, delay_pqt)
+	if z_size > 1400 then
+		self:sendAll888(led_nb, leds_show, delay_pqt)
+	else
+		self:sendZ888(z_data, leds_show, delay_pqt)
+	end
+
 
 	self:printD(string.format([[
 	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
