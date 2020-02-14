@@ -9,8 +9,9 @@ end
 
 local path = ...
 
-if not (love and love.system.getOS() == "Android") then
-	brotli = require("brotli")
+local status, brotli = pcall(require, "brotli")
+if not status then
+	print("Can't load brotli")
 end
 
 local upack = nil
@@ -80,6 +81,10 @@ function LEDsController:initialize(t)
 	self.rgbw_mode = t.rgbw_mode or 0
 
 	if t.protocol == "BRO888" and not brotli then
+		t.protocol = "RGB888"
+	end
+
+	if t.protocol == "Z888" and not love then
 		t.protocol = "RGB888"
 	end
 
@@ -749,11 +754,13 @@ end
 ---------------------------------- Z888 ----------------------------------------
 
 
-function LEDsController:compressZ888()
+function LEDsController:compressZ888(nb, off)
+	local nb = nb or self.led_nb
+	local off = off or 0
 	-- self:printD("compressZ888")
 	local data = self.leds
 	local to_compress = ""
-	for i=0,self.led_nb-1 do
+	for i=off,off+nb-1 do
 		to_compress = to_compress..pack(
 		"bbb",
 		data[i+1][1],
@@ -761,13 +768,13 @@ function LEDsController:compressZ888()
 		data[i+1][3]
 	)
 	end
-	local cmp = love.data.compress("string", "zlib", to_compress, 9)
+	local cmp = love.data.compress("string", "zlib", to_compress)
 	return cmp, #cmp
 end
 
 function LEDsController:sendZ888(data, leds_show, delay_pqt)
 	self:printD("#Z888", #data, leds_show)
-	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, 0, self.led_nb)..data
+	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, 0, self.led_nb, off)..data
 	self.count = self.count + 1
 	self.udp:sendto(to_send, self.ip, self.port)
 	socket.sleep(delay_pqt)
@@ -776,7 +783,6 @@ end
 function LEDsController:sendAllZ888(led_nb, leds_show, delay_pqt)
 
 	local z_data, z_size = self:compressZ888()
-
 	if z_size > 1400 then
 		self:sendAll888(led_nb, leds_show, delay_pqt)
 	else
