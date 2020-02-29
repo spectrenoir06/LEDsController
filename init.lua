@@ -77,7 +77,7 @@ function LEDsController:initialize(t)
 	self.debug = t.debug or false
 	self.count = 0
 	self.rgbw = t.rgbw
-	self.bright = 1
+	self.bright = t.bright or 0.1
 	self.rgbw_mode = t.rgbw_mode or 0
 
 	if t.protocol == "BRO888" and not brotli then
