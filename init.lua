@@ -776,6 +776,22 @@ function LEDsController:compressZ888(nb, off)
 	return cmp, #cmp
 end
 
+function LEDsController:compressZ565(nb, off)
+	local nb = nb or self.led_nb
+	local off = off or 0
+	-- self:printD("compressZ888")
+	local data = self.leds
+	local to_compress = ""
+
+	for i=off,off+nb-1 do
+		to_compress = to_compress..pack("H", conv888to565(data[i+1]))
+	end
+
+	local cmp = love.data.compress("string", "zlib", to_compress)
+	return cmp, #cmp
+end
+
+
 function LEDsController:sendZ888(data, leds_show, delay_pqt)
 	self:printD("#Z888", #data, leds_show)
 	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, 0, self.led_nb, off)..data
@@ -843,17 +859,13 @@ end
 
 function LEDsController:sendUDPX565(led_nb)
 	self:printD("#UDPX565")
-	local to_send = pack("bbHH", 0x52, self.count%256, 1, self.led_nb)
+	local to_send = pack("bbHH", 0x52, self.count%256, 0, self.led_nb)
 	self.count = self.count + 1
 	local data = self.leds
-	-- local crc = 0
-	for i=0,led_nb-1 do
-		to_send = to_send..pack("H", conv888to565(data[i+1]))
-	end
-	-- for i=0,led_nb-1 do
-	-- 	crc = bxor(crc, to_send:byte(1+5+i))
-	-- end
-	-- to_send = to_send..crc
+
+	local z_data, z_size = self:compressZ565()
+	to_send = to_send..z_data
+
 	self.udp:sendto(to_send, self.ip, self.port)
 end
 
