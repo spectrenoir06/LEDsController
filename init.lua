@@ -859,7 +859,7 @@ end
 
 function LEDsController:sendUDPX565(led_nb)
 	self:printD("#UDPX565")
-	local to_send = pack("bbHH", 0x52, self.count%256, 0, self.led_nb)
+	local to_send = pack("bb>H>H", 0x52, self.count%256, self.led_nb/2, self.led_nb)
 	self.count = self.count + 1
 	local data = self.leds
 
