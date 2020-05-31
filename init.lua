@@ -2,9 +2,11 @@ local socket = require("socket")
 local class = require("middleclass")
 local brotli
 local bit
+local bxor
 
 if type(jit) == "table" then
 	bit = require("bit")
+	bxor = bit.bxor
 end
 
 local path = ...
@@ -96,6 +98,8 @@ function LEDsController:initialize(t)
 		RLE888 = self.sendAllRLE888,
 		BRO888 = self.sendAllBRO888,
 		Z888   = self.sendAllZ888,
+		UDPX   = self.sendAllUDPX,
+		UDPX565= self.sendAllUDPX565,
 	}
 
 
@@ -809,6 +813,53 @@ function LEDsController:sendAllZ888(led_nb, leds_show, delay_pqt)
 		math.ceil(z_size / MAX_UPDATE_SIZE)*60,
 		z_size/(led_nb*3)*100
 	))
+end
+
+function LEDsController:sendUDPX(led_nb)
+	self:printD("#UDPX")
+	local to_send = pack("bbbH", 0x50, self.count%256, 1, self.led_nb)
+	self.count = self.count + 1
+	local data = self.leds
+	local crc = 0
+	for i=0,led_nb-1 do
+		to_send = to_send..pack(
+			"bbb",
+			data[i+1][1],
+			data[i+1][2],
+			data[i+1][3]
+		)
+	end
+	for i=0,led_nb-1 do
+		crc = bxor(crc, to_send:byte(1+5+i))
+	end
+	to_send = to_send..pack("b", crc)
+	self.udp:sendto(to_send, self.ip, self.port)
+end
+
+function LEDsController:sendAllUDPX(led_nb, leds_show, delay_pqt)
+	self:sendUDPX(led_nb)
+	socket.sleep(delay_pqt)
+end
+
+function LEDsController:sendUDPX565(led_nb)
+	self:printD("#UDPX565")
+	local to_send = pack("bbbH", 0x52, self.count%256, 1, self.led_nb)
+	self.count = self.count + 1
+	local data = self.leds
+	local crc = 0
+	for i=0,led_nb-1 do
+		to_send = to_send..pack("H", conv888to565(data[i+1]))
+	end
+	for i=0,led_nb-1 do
+		crc = bxor(crc, to_send:byte(1+5+i))
+	end
+	to_send = to_send..crc
+	self.udp:sendto(to_send, self.ip, self.port)
+end
+
+function LEDsController:sendAllUDPX565(led_nb, leds_show, delay_pqt)
+	self:sendUDPX565(led_nb)
+	socket.sleep(delay_pqt)
 end
 
 --------------------------------------------------------------------------------
