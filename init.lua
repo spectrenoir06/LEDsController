@@ -817,10 +817,10 @@ end
 
 function LEDsController:sendUDPX(led_nb)
 	self:printD("#UDPX")
-	local to_send = pack("bbbH", 0x50, self.count%256, 1, self.led_nb)
+	local to_send = pack("bbHH", 0x50, self.count%256, 1, self.led_nb)
 	self.count = self.count + 1
 	local data = self.leds
-	local crc = 0
+	-- local crc = 0
 	for i=0,led_nb-1 do
 		to_send = to_send..pack(
 			"bbb",
@@ -829,10 +829,10 @@ function LEDsController:sendUDPX(led_nb)
 			data[i+1][3]
 		)
 	end
-	for i=0,led_nb-1 do
-		crc = bxor(crc, to_send:byte(1+5+i))
-	end
-	to_send = to_send..pack("b", crc)
+	-- for i=0,led_nb-1 do
+	-- 	crc = bxor(crc, to_send:byte(1+5+i))
+	-- end
+	-- to_send = to_send..pack("b", crc)
 	self.udp:sendto(to_send, self.ip, self.port)
 end
 
@@ -843,17 +843,17 @@ end
 
 function LEDsController:sendUDPX565(led_nb)
 	self:printD("#UDPX565")
-	local to_send = pack("bbbH", 0x52, self.count%256, 1, self.led_nb)
+	local to_send = pack("bbHH", 0x52, self.count%256, 1, self.led_nb)
 	self.count = self.count + 1
 	local data = self.leds
-	local crc = 0
+	-- local crc = 0
 	for i=0,led_nb-1 do
 		to_send = to_send..pack("H", conv888to565(data[i+1]))
 	end
-	for i=0,led_nb-1 do
-		crc = bxor(crc, to_send:byte(1+5+i))
-	end
-	to_send = to_send..crc
+	-- for i=0,led_nb-1 do
+	-- 	crc = bxor(crc, to_send:byte(1+5+i))
+	-- end
+	-- to_send = to_send..crc
 	self.udp:sendto(to_send, self.ip, self.port)
 end
 
