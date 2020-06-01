@@ -776,18 +776,18 @@ function LEDsController:compressZ888(nb, off)
 	return cmp, #cmp
 end
 
-function LEDsController:compressZ565(nb, off)
+function LEDsController:compressZ565(nb, off, str)
 	local nb = nb or self.led_nb
 	local off = off or 0
 	-- self:printD("compressZ888")
 	local data = self.leds
-	local to_compress = ""
+	local to_compress = str or ""
 
 	for i=off,off+nb-1 do
 		to_compress = to_compress..pack("H", conv888to565(data[i+1]))
 	end
 
-	local cmp = love.data.compress("string", "zlib", to_compress)
+	local cmp = love.data.compress("string", "zlib", to_compress, 1)
 	return cmp, #cmp
 end
 
@@ -833,7 +833,7 @@ end
 
 function LEDsController:sendUDPX(led_nb)
 	self:printD("#UDPX")
-	local to_send = pack("bbHH", 0x50, self.count%256, 1, self.led_nb)
+	local to_send = pack("bbHH", 0x50, 0, 1, self.led_nb)
 	self.count = self.count + 1
 	local data = self.leds
 	-- local crc = 0
@@ -863,10 +863,10 @@ function LEDsController:sendUDPX565(led_nb)
 	self.count = self.count + 1
 	local data = self.leds
 
-	local z_data, z_size = self:compressZ565()
-	to_send = to_send..z_data
+	local z_data, z_size = self:compressZ565(nil, nil, to_send)
+	--to_send = to_send..z_data
 
-	self.udp:sendto(to_send, self.ip, self.port)
+	self.udp:sendto(z_data, self.ip, self.port)
 end
 
 function LEDsController:sendAllUDPX565(led_nb, leds_show, delay_pqt)
