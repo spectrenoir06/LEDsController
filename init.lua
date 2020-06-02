@@ -1,23 +1,19 @@
 local socket = require("socket")
 local class = require("middleclass")
-local brotli
 local bit
-local bxor
 
 if type(jit) == "table" then
 	bit = require("bit")
-	bxor = bit.bxor
+	-- bxor = bit.bxor
 end
-
-local path = ...
 
 local status, brotli = pcall(require, "brotli")
 if not status then
 	print("Can't load brotli")
 end
 
-local upack = nil
-local pack   = nil
+local upack
+local pack
 local gsub = string.gsub
 
 if love then
@@ -134,16 +130,6 @@ function LEDsController:printD(...)
 	if self.debug then print(...) end
 end
 
-local function hex_dump(buf)
-	for i=1,math.ceil(#buf/16) * 16 do
-		if (i-1) % 16 == 0 then io.write(string.format('%08X  ', i-1)) end
-		io.write( i > #buf and '   ' or string.format('%02X ', buf:byte(i)) )
-		if i %  8 == 0 then io.write(' ') end
-		if i % 16 == 0 then io.write( buf:sub(i-16+1, i):gsub('%c','.'), '\n' ) end
-	end
-end
-
-
 --------------------------------- ART-NET -------------------------------------
 
 function LEDsController:sendArtnetDMX(net, sub_uni, off)
@@ -197,7 +183,6 @@ function LEDsController:sendArtnetDMX_ext(nb_led, update, delay, ctn)
 	local data = self.leds
 	local size = self.leds_by_uni
 	local mode = self.rgbw and "bbbb" or "bbb"
-	local mode_s = self.rgbw and 4 or 3
 	for i=1, size do
 		local d = data[i]
 		to_send = to_send..pack(
@@ -255,10 +240,10 @@ function LEDsController:decodeArtnetDMX(data)
 	-- input[net][(uni.."")] = data:sub(19)
 	print(uni,net,seq)
 	local dmx = data:sub(19)
-	local data = self.leds
+	local leds = self.leds
 	for i=1,LEDS_BY_UNI do
 		local _,r,g,b = upack(dmx, "bbb")
-		data[i+(uni*LEDS_BY_UNI)] = {r,g,b}
+		leds[i+(uni*LEDS_BY_UNI)] = {r,g,b}
 		dmx = dmx:sub(4)
 	end
 	return uni,net,seq
@@ -759,8 +744,8 @@ end
 
 
 function LEDsController:compressZ888(nb, off)
-	local nb = nb or self.led_nb
-	local off = off or 0
+	nb = nb or self.led_nb
+	off = off or 0
 	-- self:printD("compressZ888")
 	local data = self.leds
 	local to_compress = ""
@@ -776,25 +761,25 @@ function LEDsController:compressZ888(nb, off)
 	return cmp, #cmp
 end
 
-function LEDsController:compressZ565(nb, off, str)
-	local nb = nb or self.led_nb
-	local off = off or 0
+function LEDsController:compressZ565(nb, off, header)
+	nb = nb or self.led_nb
+	off = off or 0
 	-- self:printD("compressZ888")
 	local data = self.leds
-	local to_compress = str or ""
+	local to_compress = header or ""
 
 	for i=off,off+nb-1 do
 		to_compress = to_compress..pack("H", conv888to565(data[i+1]))
 	end
 
-	local cmp = love.data.compress("string", "zlib", to_compress, 1)
+	local cmp = love.data.compress("string", "deflate", to_compress, 1)
 	return cmp, #cmp
 end
 
 
 function LEDsController:sendZ888(data, leds_show, delay_pqt)
 	self:printD("#Z888", #data, leds_show)
-	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, 0, self.led_nb, off)..data
+	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, 0, self.led_nb, 0)..data
 	self.count = self.count + 1
 	self.udp:sendto(to_send, self.ip, self.port)
 	socket.sleep(delay_pqt)
@@ -861,10 +846,8 @@ function LEDsController:sendUDPX565(led_nb)
 	self:printD("#UDPX565")
 	local to_send = pack("bb>H>H", 0x52, self.count%256, self.led_nb/2, self.led_nb)
 	self.count = self.count + 1
-	local data = self.leds
 
-	local z_data, z_size = self:compressZ565(nil, nil, to_send)
-	--to_send = to_send..z_data
+	local z_data = self:compressZ565(led_nb, 0, to_send)
 
 	self.udp:sendto(z_data, self.ip, self.port)
 end
@@ -877,7 +860,7 @@ end
 --------------------------------------------------------------------------------
 
 function LEDsController:start_dump(pro, name)
-	local protocol = 42
+	local protocol
 	if pro == "RGB888" then
 		self.dump = self.dump_888
 		protocol = LED_RGB_888
@@ -926,9 +909,8 @@ end
 
 function LEDsController:dump_RLE()
 	local to_dump = ""
-	local data, size = self:compressRLE888(self.led_nb)
-	local nb = #data
-	for k,v in ipairs(data) do
+	local data = self:compressRLE888(self.led_nb)
+	for _, v in ipairs(data) do
 		to_dump = to_dump .. v.str
 	end
 	self.dump_file:write(to_dump)
