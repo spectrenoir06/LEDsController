@@ -4,7 +4,10 @@ local bit
 
 if type(jit) == "table" then
 	bit = require("bit")
-	-- bxor = bit.bxor
+	bxor = bit.bxor
+	bor = bit.bor
+	rshift = bit.rshift
+	lshift = bit.lshift
 end
 
 local status, brotli = pcall(require, "brotli")
@@ -167,19 +170,20 @@ function LEDsController:sendArtnetDMX(net, sub_uni, off)
 end
 
 
-function LEDsController:sendArtnetDMX_ext(nb_led, update, delay, ctn)
+function LEDsController:sendArtnetDMX_ext(nb_led, update, delay)
 	self:printD("ART-NET ext DMX:")
 	local to_send = pack(
 		"AHHbbbb>H",
 		ART_HEAD,
 		ART_DMX,
 		ARTNET_VERSION,
-		ctn%256,
+		self.count%256,
 		0,
 		self.uni,
 		self.net,
 		self.leds_by_uni*3
 	)
+	self.count = self.count + 1
 	local data = self.leds
 	local size = self.leds_by_uni
 	local mode = self.rgbw and "bbbb" or "bbb"
@@ -486,6 +490,7 @@ function LEDsController:sendAll888(nb_led, update, delay)
 	local last_off = max_update * (nb_update-1)
 	self:sendLED888(last_off, nb_led - last_off, update)
 	socket.sleep(delay/nb_update)
+	return nb_led*3, nb_update
 end
 
 ------------------------------- RGB565 ----------------------------------------
@@ -495,15 +500,15 @@ local function conv888to565(color)
 	local g = color[2]
 	local b = color[3]
 
-	r = bit.rshift(r, 3)
-	r = bit.lshift(r, 6)
+	r = rshift(r, 3)
+	r = lshift(r, 6)
 
-	g = bit.rshift(g, 2)
-	r = bit.bor(r,g)
-	r = bit.lshift(r, 5)
+	g = rshift(g, 2)
+	r = bor(r,g)
+	r = lshift(r, 5)
 
-	b = bit.rshift(b, 3)
-	r = bit.bor(r,b)
+	b = rshift(b, 3)
+	r = bor(r,b)
 	-- print(color[1],color[2],color[3],r)
 	return r
 end
@@ -928,8 +933,8 @@ end
 
 --------------------------------------------------------------------------------
 
-function LEDsController:send(delay_pqt, sync, ctn)
-	self:protocol(self.led_nb, sync, delay_pqt or 0, ctn)
+function LEDsController:send(delay_pqt, sync)
+	self:protocol(self.led_nb, sync, delay_pqt or 0)
 end
 
 --------------------------------------------------------------------------------
