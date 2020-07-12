@@ -72,7 +72,7 @@ local REBOOT             = 10
 local LEDsController = class("LEDsController")
 
 function LEDsController:initialize(t)
-	self.led_nb = t.led_nb
+	self.led_nb = t.led_nb or LEDS_BY_UNI
 	self.ip = t.ip
 	self.port = t.remote_port or UDP_PORT
 	self.debug = t.debug or false
@@ -114,7 +114,12 @@ function LEDsController:initialize(t)
 	self.protocol = self.protocols[t.protocol] or self.sendAllArtnetDMX
 	-- print(t.protocol, self.protocols.RLE888, self.protocol )
 
-	self.leds_by_uni = t.leds_by_uni or LEDS_BY_UNI
+	local size = t.led_nb * (self.rgbw and 4 or 3)
+	if size < 512 then
+		self.leds_by_uni = self.led_nb
+	else
+		self.leds_by_uni = t.leds_by_uni or math.floor(512 / (self.rgbw and 4 or 3))
+	end
 
 	self.leds = {}
 	for i=1, self.led_nb do self.leds[i] = {0,0,0,0} end
@@ -146,11 +151,10 @@ function LEDsController:sendArtnetDMX(net, sub_uni, off)
 		0,
 		sub_uni,
 		net,
-		self.leds_by_uni*3
+		self.leds_by_uni*(self.rgbw and 4 or 3)
 	)
 	self.count = self.count + 1
 	local data = self.leds
-	local ctn = 0
 	local size = self.leds_by_uni
 	local mode = self.rgbw and "bbbb" or "bbb"
 	local mode_s = self.rgbw and 4 or 3
@@ -163,7 +167,6 @@ function LEDsController:sendArtnetDMX(net, sub_uni, off)
 			d and d[3] or 0,
 			d and d[4] or 0
 		)
-		ctn = ctn + mode_s
 	end
 
 	self.udp:sendto(to_send, self.ip, self.port)
@@ -181,7 +184,7 @@ function LEDsController:sendArtnetDMX_ext(nb_led, update, delay)
 		0,
 		self.uni,
 		self.net,
-		self.leds_by_uni*3
+		self.leds_by_uni*(self.rgbw and 4 or 3)
 	)
 	self.count = self.count + 1
 	local data = self.leds
@@ -820,6 +823,8 @@ function LEDsController:sendAllZ888(led_nb, leds_show, delay_pqt)
 		z_size/(led_nb*3)*100
 	))
 end
+
+---------------------------------- UDPX ----------------------------------------
 
 function LEDsController:sendUDPX(led_nb)
 	self:printD("#UDPX")
