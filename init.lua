@@ -522,7 +522,7 @@ function LEDsController:send565LED(off, len, show)
 	self.count = self.count + 1
 	local data = self.leds
 	for i=0,len-1 do
-		to_send = to_send..pack("H", conv888to565(data[i+1]))
+		to_send = to_send..pack("H", conv888to565(data[off+i+1]))
 	end
 	self.udp:sendto(to_send, self.ip, self.port)
 end
