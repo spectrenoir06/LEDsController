@@ -59,6 +59,9 @@ local LED_BRO_888_UPDATE = 14
 local LED_Z_888          = 15
 local LED_Z_888_UPDATE   = 16
 
+local LED_Z_565          = 17
+local LED_Z_565_UPDATE   = 18
+
 local LED_UPDATE         = 4
 local GET_INFO           = 5
 local LED_TEST           = 6
@@ -97,6 +100,7 @@ function LEDsController:initialize(t)
 		RLE888 = self.sendAllRLE888,
 		BRO888 = self.sendAllBRO888,
 		Z888   = self.sendAllZ888,
+		Z565   = self.sendAllZ565,
 		UDPX   = self.sendAllUDPX,
 		UDPX565= self.sendAllUDPX565,
 	}
@@ -769,22 +773,6 @@ function LEDsController:compressZ888(nb, off)
 	return cmp, #cmp
 end
 
-function LEDsController:compressZ565(nb, off, header)
-	nb = nb or self.led_nb
-	off = off or 0
-	-- self:printD("compressZ888")
-	local data = self.leds
-	local to_compress = header or ""
-
-	for i=off,off+nb-1 do
-		to_compress = to_compress..pack("H", conv888to565(data[i+1]))
-	end
-
-	local cmp = love.data.compress("string", "deflate", to_compress, 1)
-	return cmp, #cmp
-end
-
-
 function LEDsController:sendZ888(data, leds_show, delay_pqt)
 	self:printD("#Z888", #data, leds_show)
 	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, 0, self.led_nb, 0)..data
@@ -807,6 +795,77 @@ function LEDsController:sendAllZ888(led_nb, leds_show, delay_pqt)
 	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
 	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
 	Z-888:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-888 VS RGB-888)
+	]],
+
+		math.ceil(led_nb / LEDS_BY_UNI)+1,
+		led_nb*3/1024,
+		(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
+
+		math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
+		(led_nb*3)/1024,
+		math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
+
+		math.ceil(z_size / MAX_UPDATE_SIZE),
+		z_size/1024,
+		math.ceil(z_size / MAX_UPDATE_SIZE)*60,
+		z_size/(led_nb*3)*100
+	))
+end
+
+function LEDsController:compressZ565(nb, off, header)
+	nb = nb or self.led_nb
+	off = off or 0
+	-- self:printD("compressZ888")
+	local data = self.leds
+	local to_compress = header or ""
+
+	for i=off,off+nb-1 do
+		to_compress = to_compress..pack("H", conv888to565(data[i+1]))
+	end
+
+	local cmp = love.data.compress("string", "zlib", to_compress)
+	return cmp, #cmp
+end
+
+function LEDsController:sendZ565(data, leds_nb, leds_show, offset, delay_pqt)
+	self:printD("#Z565", #data, leds_nb, leds_show, offset)
+	
+	local to_send = pack("bbHH",
+		(leds_show and LED_Z_565_UPDATE or LED_Z_565),
+		self.count%256,
+		offset,
+		#data
+	)..data
+
+	self.count = self.count + 1
+	self.udp:sendto(to_send, self.ip, self.port)
+	socket.sleep(delay_pqt)
+end
+
+function LEDsController:sendAllZ565(led_nb, leds_show, delay_pqt)
+
+	local z_data, z_size = self:compressZ565()
+	local split = math.ceil(z_size/1400)
+	if split > 1 then
+		print(" "..split, z_size/1400)
+		local off = 0
+		for i=0, split-2 do
+			local l_data = z_data:sub(off+1, off+1400)
+			self:sendZ565(l_data, led_nb, false, off, delay_pqt)
+			off = off + #l_data
+		end
+		
+		local l_data = z_data:sub(off+1)
+		self:sendZ565(l_data, led_nb, true, off, delay_pqt)
+	else
+		self:sendZ565(z_data, led_nb, leds_show, 0, delay_pqt)
+	end
+
+
+	self:printD(string.format([[
+	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	Z-565:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-565 VS RGB-888)
 	]],
 
 		math.ceil(led_nb / LEDS_BY_UNI)+1,
