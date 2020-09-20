@@ -81,7 +81,7 @@ function LEDsController:initialize(t)
 	self.debug = t.debug or false
 	self.count = 0
 	self.rgbw = t.rgbw
-	self.bright = t.bright or 0.1
+	self.bright = t.bright or 1
 	self.rgbw_mode = t.rgbw_mode or 0
 
 	if t.protocol == "BRO888" and not brotli then
@@ -758,7 +758,6 @@ end
 function LEDsController:compressZ888(nb, off)
 	nb = nb or self.led_nb
 	off = off or 0
-	-- self:printD("compressZ888")
 	local data = self.leds
 	local to_compress = ""
 	for i=off,off+nb-1 do
@@ -815,7 +814,6 @@ end
 function LEDsController:compressZ565(nb, off, header)
 	nb = nb or self.led_nb
 	off = off or 0
-	-- self:printD("compressZ888")
 	local data = self.leds
 	local to_compress = header or ""
 
@@ -827,8 +825,8 @@ function LEDsController:compressZ565(nb, off, header)
 	return cmp, #cmp
 end
 
-function LEDsController:sendZ565(data, leds_nb, leds_show, offset, delay_pqt)
-	self:printD("#Z565", #data, leds_nb, leds_show, offset)
+function LEDsController:sendZ565(data, offset, leds_show, delay_pqt)
+	self:printD("#Z565 size:", #data, offset, leds_show, delay_pqt)
 	
 	local to_send = pack("bbHH",
 		(leds_show and LED_Z_565_UPDATE or LED_Z_565),
@@ -839,7 +837,7 @@ function LEDsController:sendZ565(data, leds_nb, leds_show, offset, delay_pqt)
 
 	self.count = self.count + 1
 	self.udp:sendto(to_send, self.ip, self.port)
-	socket.sleep(delay_pqt)
+	socket.sleep(delay_pqt or 0)
 end
 
 function LEDsController:sendAllZ565(led_nb, leds_show, delay_pqt)
@@ -847,18 +845,16 @@ function LEDsController:sendAllZ565(led_nb, leds_show, delay_pqt)
 	local z_data, z_size = self:compressZ565()
 	local split = math.ceil(z_size/1400)
 	if split > 1 then
-		print(" "..split, z_size/1400)
 		local off = 0
 		for i=0, split-2 do
 			local l_data = z_data:sub(off+1, off+1400)
-			self:sendZ565(l_data, led_nb, false, off, delay_pqt)
+			self:sendZ565(l_data, off, false, delay_pqt)
 			off = off + #l_data
 		end
-		
 		local l_data = z_data:sub(off+1)
-		self:sendZ565(l_data, led_nb, true, off, delay_pqt)
+		self:sendZ565(l_data, off, true, delay_pqt)
 	else
-		self:sendZ565(z_data, led_nb, leds_show, 0, delay_pqt)
+		self:sendZ565(z_data, 0, leds_show, delay_pqt)
 	end
 
 
@@ -947,15 +943,18 @@ function LEDsController:start_dump(pro, name)
 			self.dump = self.dump_888
 			protocol = LED_RGB_888
 		end
+	elseif pro == "Z565" then
+		self.dump = self.dump_Z565
+		protocol = LED_Z_565
 	else
 		error("dump pro unknow", pro)
 		return
 	end
-	self.dump_file = io.open("dump/"..(name or "anim").."."..pro, "w")
+	self.dump_file = love.filesystem.newFile("dump/"..(name or "anim").."."..pro, "w")
 	if not self.dump_file then
 		error("Can't write: 'dump/"..(name or "anim").."."..pro.."'")
 	end
-	self.dump_file:write(pack("bHH", protocol, 30, self.led_nb))
+	self.dump_file:write(pack("bHH", protocol, 60, self.led_nb))
 end
 
 function LEDsController:dump_888()
@@ -990,8 +989,14 @@ function LEDsController:dump_BRO()
 	self.dump_file:write(pack("H", bro_size) .. bro_data )
 end
 
-function LEDsController:dump_Z()
+function LEDsController:dump_Z888()
 	local z_data, z_size = self:compressZ888()
+	self.dump_file:write(pack("H", z_size) .. z_data )
+end
+
+function LEDsController:dump_Z565()
+	local z_data, z_size = self:compressZ565()
+	print("DUMP:", z_size)
 	self.dump_file:write(pack("H", z_size) .. z_data )
 end
 
@@ -999,6 +1004,9 @@ end
 
 function LEDsController:send(delay_pqt, sync)
 	self:protocol(self.led_nb, sync, delay_pqt or 0)
+	if self.dump then
+		self:dump()
+	end
 end
 
 --------------------------------------------------------------------------------
