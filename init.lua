@@ -52,6 +52,8 @@ local LED_RGB_888_UPDATE = 1
 local LED_RGB_565        = 2
 local LED_RGB_565_UPDATE = 3
 
+local STOP        = 11
+
 local LED_RLE_888        = 11
 local LED_RLE_888_UPDATE = 12
 local LED_BRO_888        = 13
@@ -110,7 +112,7 @@ function LEDsController:initialize(t)
 		self.udp = t.udp
 	else
 		self.udp = assert(socket.udp())
-		assert(self.udp:setsockname("0.0.0.0", self.port))
+		assert(self.udp:setsockname("0.0.0.0", 0))
 		self.udp:settimeout(0)
 		self.udp:setoption("broadcast", true)
 	end
@@ -472,7 +474,7 @@ end
 
 function LEDsController:sendLED888(off, len, show)
 	-- self:printD("sendLED888", off, len, show)
-	local to_send = pack("bbHH", (show and LED_RGB_888_UPDATE or LED_RGB_888), self.count%256, off, len)
+	local to_send = pack("bbHH", (show and LED_RGB_888_UPDATE or LED_RGB_888), self.count%256, off, len*3)
 	self.count = self.count + 1
 	local data = self.leds
 	for i=0,len-1 do
@@ -522,7 +524,7 @@ end
 
 function LEDsController:send565LED(off, len, show)
 	-- self:printD(off, len)
-	local to_send = pack("bbHH", (show and LED_RGB_565_UPDATE or LED_RGB_565), self.count%256, off, len)
+	local to_send = pack("bbHH", (show and LED_RGB_565_UPDATE or LED_RGB_565), self.count%256, off, len*2)
 	self.count = self.count + 1
 	local data = self.leds
 	for i=0,len-1 do
@@ -772,9 +774,9 @@ function LEDsController:compressZ888(nb, off)
 	return cmp, #cmp
 end
 
-function LEDsController:sendZ888(data, leds_show, delay_pqt)
-	self:printD("#Z888", #data, leds_show)
-	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, 0, self.led_nb, 0)..data
+function LEDsController:sendZ888(data, offset, leds_show, delay_pqt)
+	self:printD("#Z888 size:", #data, offset, leds_show, delay_pqt)
+	local to_send = pack("bbHH", (leds_show and LED_Z_888_UPDATE or LED_Z_888), self.count%256, offset, #data)..data
 	self.count = self.count + 1
 	self.udp:sendto(to_send, self.ip, self.port)
 	socket.sleep(delay_pqt)
@@ -783,32 +785,39 @@ end
 function LEDsController:sendAllZ888(led_nb, leds_show, delay_pqt)
 
 	local z_data, z_size = self:compressZ888()
-	if z_size > 1400 then
-		self:sendAll888(led_nb, leds_show, delay_pqt)
+	local split = math.ceil(z_size/1400)
+	if split > 1 then
+		local off = 0
+		for i=0, split-2 do
+			local l_data = z_data:sub(off+1, off+1400)
+			self:sendZ888(l_data, off, false, delay_pqt)
+			off = off + #l_data
+		end
+		local l_data = z_data:sub(off+1)
+		self:sendZ888(l_data, off, true, delay_pqt)
 	else
-		self:sendZ888(z_data, leds_show, delay_pqt)
+		self:sendZ888(z_data, 0, leds_show, delay_pqt)
 	end
 
+	-- self:printD(string.format([[
+	-- ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- Z-888:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-888 VS RGB-888)
+	-- ]],
 
-	self:printD(string.format([[
-	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	Z-888:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-888 VS RGB-888)
-	]],
+	-- 	math.ceil(led_nb / LEDS_BY_UNI)+1,
+	-- 	led_nb*3/1024,
+	-- 	(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
 
-		math.ceil(led_nb / LEDS_BY_UNI)+1,
-		led_nb*3/1024,
-		(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
+	-- 	(led_nb*3)/1024,
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
 
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
-		(led_nb*3)/1024,
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
-
-		math.ceil(z_size / MAX_UPDATE_SIZE),
-		z_size/1024,
-		math.ceil(z_size / MAX_UPDATE_SIZE)*60,
-		z_size/(led_nb*3)*100
-	))
+	-- 	math.ceil(z_size / MAX_UPDATE_SIZE),
+	-- 	z_size/1024,
+	-- 	math.ceil(z_size / MAX_UPDATE_SIZE)*60,
+	-- 	z_size/(led_nb*3)*100
+	-- ))
 end
 
 function LEDsController:compressZ565(nb, off, header)
@@ -946,6 +955,9 @@ function LEDsController:start_dump(pro, name)
 	elseif pro == "Z565" then
 		self.dump = self.dump_Z565
 		protocol = LED_Z_565
+	elseif pro == "Z888" then
+		self.dump = self.dump_Z888
+		protocol = LED_Z_888
 	else
 		error("dump pro unknow", pro)
 		return
@@ -954,7 +966,7 @@ function LEDsController:start_dump(pro, name)
 	if not self.dump_file then
 		error("Can't write: 'dump/"..(name or "anim").."."..pro.."'")
 	end
-	self.dump_file:write(pack("bHH", protocol, 60, self.led_nb))
+	self.dump_file:write(pack("bHH", protocol, 30, self.led_nb))
 end
 
 function LEDsController:dump_888()
@@ -1007,6 +1019,21 @@ function LEDsController:send(delay_pqt, sync)
 	if self.dump then
 		self:dump()
 	end
+end
+
+function LEDsController:stop()
+	self:printD("stop:")
+		
+	local to_send = pack("bbHH",
+		STOP,
+		self.count%256,
+		0,
+		0
+	)
+
+	self.count = self.count + 1
+	self.udp:sendto(to_send, self.ip, self.port)
+	socket.sleep(delay_pqt or 0)
 end
 
 --------------------------------------------------------------------------------
