@@ -105,6 +105,8 @@ function LEDsController:initialize(t)
 		Z565   = self.sendAllZ565,
 		UDPX   = self.sendAllUDPX,
 		UDPX565= self.sendAllUDPX565,
+		DRGB = self.sendDRGB,
+		DNRGB = self.sendAllDNRGB,
 	}
 
 
@@ -931,7 +933,61 @@ function LEDsController:sendAllUDPX565(led_nb, leds_show, delay_pqt)
 	socket.sleep(delay_pqt)
 end
 
+
+------------------------------- DRGB ----------------------------------------
+
+function LEDsController:sendDRGB(nb_led, update, delay)
+	self:printD("sendDRGB", nb_led, update, delay)
+	local to_send = pack("bb", 2, 2)
+	self.count = self.count + 1
+	local data = self.leds
+	for i=0,nb_led-1 do
+		to_send = to_send..pack(
+		"bbb",
+		data[i+1][1],
+		data[i+1][2],
+		data[i+1][3]
+	)
+	end
+	self.udp:sendto(to_send, self.ip, self.port)
+	socket.sleep(delay)
+end
+
+------------------------------- DNRGB ----------------------------------------
+
+function LEDsController:sendDNRGB(off, len, show)
+	-- self:printD("sendLED888", off, len, show)
+	local to_send = pack("bbH", 4, 2, off)
+	self.count = self.count + 1
+	local data = self.leds
+	for i=0,len-1 do
+		to_send = to_send..pack(
+		"bbb",
+		data[off+i+1][1],
+		data[off+i+1][2],
+		data[off+i+1][3]
+	)
+	end
+	self.udp:sendto(to_send, self.ip, self.port)
+end
+
+function LEDsController:sendAllDNRGB(nb_led, update, delay)
+	local max_update = 489
+	local nb_update = math.ceil(nb_led / max_update)
+	self:printD("#DNRGB", nb_led*3, nb_update)
+	for i=0, nb_update-2 do
+		self:sendDNRGB(i * max_update, max_update, false)
+		socket.sleep(delay/nb_update)
+	end
+	local last_off = max_update * (nb_update-1)
+	self:sendDNRGB(last_off, nb_led - last_off, false)
+	socket.sleep(delay/nb_update)
+	return nb_led*3, nb_update
+end
+
+
 --------------------------------------------------------------------------------
+
 
 function LEDsController:start_dump(pro, name)
 	local protocol
