@@ -182,7 +182,7 @@ end
 
 
 function LEDsController:sendArtnetDMX_ext(nb_led, update, delay)
-	self:printD("ART-NET ext DMX:")
+	self:printD("ART-NET ext DMX:", self.uni, self.net)
 	local to_send = pack(
 		"AHHbbbb>H",
 		ART_HEAD,
@@ -190,7 +190,7 @@ function LEDsController:sendArtnetDMX_ext(nb_led, update, delay)
 		ARTNET_VERSION,
 		self.count%256,
 		0,
-		self.uni,
+		self.uni + (bit.lshift(self.subnet or 0, 4)),
 		self.net,
 		self.leds_by_uni*(self.rgbw and 4 or 3)
 	)
@@ -763,16 +763,16 @@ function LEDsController:compressZ888(nb, off)
 	nb = nb or self.led_nb
 	off = off or 0
 	local data = self.leds
-	local to_compress = ""
+	local t = {}
 	for i=off,off+nb-1 do
-		to_compress = to_compress..pack(
+		table.insert(t, pack(
 		"bbb",
 		data[i+1][1],
 		data[i+1][2],
 		data[i+1][3]
-	)
+	))
 	end
-	local cmp = love.data.compress("string", "zlib", to_compress)
+	local cmp = love.data.compress("string", "zlib", table.concat(t))
 	return cmp, #cmp
 end
 
@@ -826,13 +826,14 @@ function LEDsController:compressZ565(nb, off, header)
 	nb = nb or self.led_nb
 	off = off or 0
 	local data = self.leds
-	local to_compress = header or ""
+
+	local t = {}
 
 	for i=off,off+nb-1 do
-		to_compress = to_compress..pack("H", conv888to565(data[i+1]))
+		table.insert(t, pack("H", conv888to565(data[i+1])))
 	end
-
-	local cmp = love.data.compress("string", "zlib", to_compress)
+	
+	local cmp = love.data.compress("string", "zlib", table.concat(t))
 	return cmp, #cmp
 end
 
@@ -852,7 +853,7 @@ function LEDsController:sendZ565(data, offset, leds_show, delay_pqt)
 end
 
 function LEDsController:sendAllZ565(led_nb, leds_show, delay_pqt)
-
+	-- local start = socket.gettime()
 	local z_data, z_size = self:compressZ565()
 	local split = math.ceil(z_size/1400)
 	if split > 1 then
@@ -868,26 +869,27 @@ function LEDsController:sendAllZ565(led_nb, leds_show, delay_pqt)
 		self:sendZ565(z_data, 0, leds_show, delay_pqt)
 	end
 
+	-- print(1/(socket.gettime() - start))
 
-	self:printD(string.format([[
-	ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
-	Z-565:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-565 VS RGB-888)
-	]],
+	-- self:printD(string.format([[
+	-- ART-NET:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- RGB-888:  %02d pqt/frame;	%0.3f Ko;	%02d pqt/S
+	-- Z-565:    %02d pqt/frame;	%0.3f Ko;	%02d pqt/S;	%0.03f%% (Z-565 VS RGB-888)
+	-- ]],
 
-		math.ceil(led_nb / LEDS_BY_UNI)+1,
-		led_nb*3/1024,
-		(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
+	-- 	math.ceil(led_nb / LEDS_BY_UNI)+1,
+	-- 	led_nb*3/1024,
+	-- 	(math.ceil(led_nb / LEDS_BY_UNI)+1)*60,
 
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
-		(led_nb*3)/1024,
-		math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/3)),
+	-- 	(led_nb*3)/1024,
+	-- 	math.ceil(led_nb / (MAX_UPDATE_SIZE/3))*60,
 
-		math.ceil(z_size / MAX_UPDATE_SIZE),
-		z_size/1024,
-		math.ceil(z_size / MAX_UPDATE_SIZE)*60,
-		z_size/(led_nb*3)*100
-	))
+	-- 	math.ceil(z_size / MAX_UPDATE_SIZE),
+	-- 	z_size/1024,
+	-- 	math.ceil(z_size / MAX_UPDATE_SIZE)*60,
+	-- 	z_size/(led_nb*3)*100
+	-- ))
 end
 
 ---------------------------------- UDPX ----------------------------------------
@@ -938,18 +940,18 @@ end
 
 function LEDsController:sendDRGB(nb_led, update, delay)
 	self:printD("sendDRGB", nb_led, update, delay)
-	local to_send = pack("bb", 2, 2)
+	local t = {pack("bb", 2, 2)}
 	self.count = self.count + 1
 	local data = self.leds
-	for i=0,nb_led-1 do
-		to_send = to_send..pack(
-		"bbb",
-		data[i+1][1],
-		data[i+1][2],
-		data[i+1][3]
-	)
+	for i=1,nb_led do
+		t[i+1] = pack(
+			"bbb",	
+			data[i][1],
+			data[i][2],
+			data[i][3]
+		)
 	end
-	self.udp:sendto(to_send, self.ip, self.port)
+	self.udp:sendto(table.concat(t), self.ip, self.port)
 	socket.sleep(delay)
 end
 
