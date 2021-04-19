@@ -54,10 +54,10 @@ local LED_RGB_565_UPDATE = 3
 
 local STOP        = 11
 
-local LED_RLE_888        = 11
-local LED_RLE_888_UPDATE = 12
-local LED_BRO_888        = 13
-local LED_BRO_888_UPDATE = 14
+-- local LED_RLE_888        = 11
+-- local LED_RLE_888_UPDATE = 12
+-- local LED_BRO_888        = 13
+-- local LED_BRO_888_UPDATE = 14
 local LED_Z_888          = 15
 local LED_Z_888_UPDATE   = 16
 
